@@ -1,6 +1,5 @@
 """Compute statistical description of datasets."""
-import multiprocessing.pool
-import multiprocessing
+from concurrent.futures import ThreadPoolExecutor
 import itertools
 import os
 import warnings
@@ -391,6 +390,18 @@ def multiprocess_1d(column, series) -> Tuple[str, dict]:
     """
     return column, describe_1d(series)
 
+def multiprocess_1d_tuple(tuple_arg) -> Tuple[str, dict]:
+    """Wrapper to process series in parallel.
+
+    Args:
+        tuple_arg: tuple containing column, series.
+
+    Returns:
+        A tuple with column and the series description.
+    """
+    column, series = tuple_arg
+    return multiprocess_1d(column, series)
+
 
 def describe_table(df: pd.DataFrame, variable_stats: pd.DataFrame) -> dict:
     """General statistics for the DataFrame.
@@ -526,7 +537,7 @@ def describe(df: pd.DataFrame) -> dict:
     # Multiprocessing of Describe 1D for each column
     pool_size = config["pool_size"].get(int)
     if pool_size <= 0:
-        pool_size = multiprocessing.cpu_count()
+        pool_size = len(os.sched_getaffinity(0))
 
     if pool_size == 1:
         args = [(column, series) for column, series in df.iteritems()]
@@ -535,9 +546,10 @@ def describe(df: pd.DataFrame) -> dict:
             for column, series in itertools.starmap(multiprocess_1d, args)
         }
     else:
-        with multiprocessing.pool.ThreadPool(pool_size) as executor:
+
+        with ThreadPoolExecutor(max_workers=pool_size) as executor:
             series_description = {}
-            results = executor.starmap(multiprocess_1d, df.iteritems())
+            results = executor.map(multiprocess_1d_tuple, df.iteritems())
             for col, description in results:
                 series_description[col] = description
 
